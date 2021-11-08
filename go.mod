@@ -8,6 +8,7 @@ require (
 	github.com/onsi/gomega v1.16.0
 	github.com/prometheus/common v0.30.0 // indirect
 	github.com/spf13/pflag v1.0.5
+	github.com/tinkerbell/pbnj v0.0.0-20211027151347-2fb19ffbe7ad // indirect
 	github.com/tinkerbell/tink v0.0.0-20210910200746-3743d31e0cf0
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/net v0.0.0-20210825183410-e898025ed96a // indirect
