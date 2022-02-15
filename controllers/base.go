@@ -375,12 +375,6 @@ func isMachineReady(machine *clusterv1.Machine) (string, error) {
 		return "retrieving bootstrap data: linked Machine's bootstrap.dataSecretName is not available yet", nil
 	}
 
-	// Spec says this field is optional, but @detiber says it's effectively required,
-	// so treat it as so.
-	if machine.Spec.Version == nil || *machine.Spec.Version == "" {
-		return "", ErrMachineVersionEmpty
-	}
-
 	return "", nil
 }
 
