@@ -25,7 +25,7 @@ GOARCH  := $(shell go env GOARCH)
 GOOS    := $(shell go env GOOS)
 GOPROXY := $(shell go env GOPROXY)
 ifeq ($(GOPROXY),)
-GOPROXY := https://proxy.golang.org
+GOPROXY := direct
 endif
 export GOPROXY
 

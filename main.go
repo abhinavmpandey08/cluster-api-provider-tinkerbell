@@ -35,6 +35,8 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	mgrClient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	infrastructurev1 "github.com/tinkerbell/cluster-api-provider-tinkerbell/api/v1beta1"
@@ -237,8 +239,17 @@ func setupTinkShimControllers(ctx context.Context, mgr ctrl.Manager) error {
 	templateClient := client.NewTemplateClient(tinkclient.TemplateClient)
 	workflowClient := client.NewWorkflowClient(tinkclient.WorkflowClient, hwClient)
 
+	setCacheDisable := func(c *cluster.Options) {
+		c.ClientDisableCacheFor = []mgrClient.Object{&tinkv1.Hardware{}}
+	}
+
+	c, err := cluster.New(mgr.GetConfig(), setCacheDisable)
+	if err != nil {
+		return fmt.Errorf("unable to create a cluster client: %v", err)
+	}
+
 	if err := (&tinkhardware.Reconciler{
-		Client:         mgr.GetClient(),
+		Client:         c.GetClient(),
 		HardwareClient: hwClient,
 	}).SetupWithManager(ctx, mgr, controller.Options{MaxConcurrentReconciles: tinkerbellHardwareConcurrency}); err != nil {
 		return fmt.Errorf("unable to create tink hardware controller: %w", err)
