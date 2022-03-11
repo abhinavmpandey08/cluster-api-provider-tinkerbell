@@ -23,6 +23,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
@@ -48,6 +49,9 @@ type machineReconcileContext struct {
 	tinkerbellCluster    *infrastructurev1.TinkerbellCluster
 	bootstrapCloudConfig string
 }
+
+// Add mutex lock for picking up a hardware for the nodes.
+var lock sync.Mutex
 
 // ErrHardwareMissingDiskConfiguration is returned when the referenced hardware is missing
 // disk configuration.
@@ -328,6 +332,11 @@ func (mrc *machineReconcileContext) ensureHardwareUserData(hardware *tinkv1.Hard
 }
 
 func (mrc *machineReconcileContext) ensureHardware() (*tinkv1.Hardware, error) {
+	// lock the process of picking up the hardware and updating it's ownership.
+	// This avoids picking up same hardware for the machines.
+	lock.Lock()
+	defer lock.Unlock()
+
 	hardware, err := mrc.hardwareForMachine()
 	if err != nil {
 		return nil, fmt.Errorf("getting hardware: %w", err)
