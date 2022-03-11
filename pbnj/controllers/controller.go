@@ -75,7 +75,9 @@ func (r *Reconciler) reconcileNormal(ctx context.Context, bmc *pbnjv1alpha1.BMC)
 		if err != nil {
 			logger.Error(err, "Failed to set boot device", "BootDevice", bmc.Spec.BootDevice)
 
-			return ctrl.Result{}, fmt.Errorf("failed to set boot device: %s", bmc.Spec.BootDevice) //nolint:goerr113
+			// TODO: Temporary fix to not error out on boot set failure.
+			// This change will be reverted when we have better error propagations
+			// return ctrl.Result{}, fmt.Errorf("failed to set boot device: %s", bmc.Spec.BootDevice) //nolint:goerr113
 		}
 	}
 
