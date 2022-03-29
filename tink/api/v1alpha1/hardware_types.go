@@ -27,8 +27,17 @@ const (
 	// HardwareError represents hardware that is in an error state.
 	HardwareError = HardwareState("Error")
 
-	// HardwareReady represents hardware that is in a ready state.
+	// HardwareReady represents hardware which has a completed workflow.
 	HardwareReady = HardwareState("Ready")
+
+	// HardwareRunning represents hardware which has a running workflow.
+	HardwareRunning = HardwareState("Running")
+
+	// HardwareAvailable represents hardware's ownerName label is not set.
+	HardwareAvailable = HardwareState("Available")
+
+	// HardwarePending represents hardware has ownerName set but doesn't have a running workflow yet.
+	HardwarePending = HardwareState("Pending")
 )
 
 // HardwareSpec defines the desired state of Hardware.

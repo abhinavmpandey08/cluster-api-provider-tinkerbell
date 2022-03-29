@@ -22,8 +22,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/tinkerbell/tink/protos/hardware"
+	"github.com/tinkerbell/tink/protos/workflow"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,6 +34,8 @@ import (
 
 	tinkv1alpha1 "github.com/tinkerbell/cluster-api-provider-tinkerbell/tink/api/v1alpha1"
 )
+
+const HardwareOwnerNameLabel = "v1alpha1.tinkerbell.org/ownerName"
 
 type hardwareClient interface {
 	// Create(ctx context.Context, h *hardware.Hardware) error
@@ -105,7 +109,7 @@ func (r *Reconciler) reconcileNormal(ctx context.Context, h *tinkv1alpha1.Hardwa
 		return ctrl.Result{}, fmt.Errorf("failed to get hardware from Tinkerbell: %w", err)
 	}
 
-	logger.Info("Found hardware in tinkerbell", "tinkHardware", tinkHardware)
+	logger.Info("Found hardware in tinkerbell")
 
 	// TODO: also allow for reconciling hw.metadata.instance.id and hw.metadata.instance.hostname if not set?
 	// TODO: bubble up storage information better in status
@@ -226,8 +230,6 @@ func (r *Reconciler) reconcileStatus(
 		h.Status.Interfaces = append(h.Status.Interfaces, tinkInterface)
 	}
 
-	h.Status.State = tinkv1alpha1.HardwareReady
-
 	disks, err := disksFromMetaData(h.Status.TinkMetadata)
 	if err != nil {
 		// TODO: better way to bubble up an issue here?
@@ -236,10 +238,53 @@ func (r *Reconciler) reconcileStatus(
 
 	h.Status.Disks = disks
 
+	if _, ok := h.Labels[HardwareOwnerNameLabel]; !ok {
+		logger.Info("Hardware ownerName label not set, setting hardware state to Available")
+		h.Status.State = tinkv1alpha1.HardwareAvailable
+	} else {
+		logger.Info("Hardware ownerName label is set, searching for its workflow")
+
+		workflowList := &tinkv1alpha1.WorkflowList{}
+		options := &client.ListOptions{}
+
+		if err := r.Client.List(ctx, workflowList, options); err != nil {
+			logger.Error(err, "Failed to list workflows")
+		}
+
+		workflowFound := false
+
+		for _, w := range workflowList.Items {
+			if w.Spec.HardwareRef == h.Name {
+				logger.Info("Workflow found for hardware", "workflow-name", w.Name)
+				workflowFound = true
+				if w.Status.State == workflow.State_STATE_RUNNING.String() {
+					h.Status.State = tinkv1alpha1.HardwareRunning
+				} else if w.Status.State == workflow.State_STATE_SUCCESS.String() {
+					h.Status.State = tinkv1alpha1.HardwareReady
+				}
+			}
+		}
+
+		if !workflowFound {
+			logger.Info("Workflow not found for hardware, setting state to pending")
+			h.Status.State = tinkv1alpha1.HardwarePending
+		}
+	}
+
+	if err := r.reconcileTinkerbellHardwareState(ctx, h.Status.State, h.Name, tinkHardware); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := r.Client.Status().Patch(ctx, h, patch); err != nil {
 		logger.Error(err, "Failed to patch hardware")
 
 		return ctrl.Result{}, fmt.Errorf("failed to patch hardware: %w", err)
+	}
+
+	if h.Status.State != tinkv1alpha1.HardwareAvailable && h.Status.State != tinkv1alpha1.HardwareReady && h.Status.State != tinkv1alpha1.HardwareRunning {
+		// If the hardware isn't ready, requeue in 10 seconds
+		logger.Info("Hardware not ready yet, requeueing after 10 seconds")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -284,4 +329,56 @@ func parseDisks(disks interface{}) []tinkv1alpha1.Disk {
 	}
 
 	return nil
+}
+
+func (r *Reconciler) reconcileTinkerbellHardwareState(
+	ctx context.Context,
+	state tinkv1alpha1.HardwareState,
+	hardwareName string,
+	tinkHardware *hardware.Hardware,
+) error {
+	logger := ctrl.LoggerFrom(ctx).WithValues("hardware", hardwareName)
+
+	metadata, err := unmarshalMetadata(tinkHardware.Metadata)
+	if err != nil {
+		logger.Error(err, "Failed to unmarshal hardware metadata")
+		return err
+	}
+
+	if state == tinkv1alpha1.HardwareAvailable {
+		metadata["state"] = "provisioning"
+		metadata["userdata"] = ""
+	} else if state == tinkv1alpha1.HardwareReady || state == tinkv1alpha1.HardwareRunning {
+		metadata["state"] = "in_use"
+	}
+
+	if tinkHardware.Metadata, err = marshalMetadata(metadata); err != nil {
+		logger.Error(err, "Failed to marshal hardware metadata")
+		return err
+	}
+
+	if err := r.HardwareClient.Update(ctx, tinkHardware); err != nil {
+		logger.Error(err, "Failed to update hardware state", "hardware", tinkHardware)
+		return fmt.Errorf("failed to update hardware state: %w", err)
+	}
+
+	logger.Info("Updated tinkerbell hardware state", "state", metadata["state"])
+
+	return nil
+}
+
+func marshalMetadata(hwMetaData map[string]interface{}) (string, error) {
+	metadata, err := json.Marshal(hwMetaData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal metadata to json: %w", err)
+	}
+	return string(metadata), nil
+}
+
+func unmarshalMetadata(metadata string) (map[string]interface{}, error) {
+	hwMetaData := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(metadata), &hwMetaData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal metadata from json: %w", err)
+	}
+	return hwMetaData, nil
 }

@@ -237,7 +237,7 @@ func (r *Reconciler) reconcileStatus(
 		// If the workflow hasn't successfully run, requeue in
 		// a minute. This is to workaround the lack of events
 		// for workflow status
-		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	return ctrl.Result{}, nil
